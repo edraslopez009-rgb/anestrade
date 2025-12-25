@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ANESTRADE Studio</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+    }
+    #ui {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    button {
+      margin: 4px 0;
+      width: 140px;
+      padding: 6px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <strong>ANESTRADE Studio</strong><br>
+  <button onclick="addBlock()">Add Block</button>
+  <button onclick="saveToURL()">Save to URL</button>
+  <button onclick="clearScene()">Clear Scene</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+  // Scene setup
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x222222);
+
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+  camera.position.set(5, 5, 5);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const light = new THREE.DirectionalLight(0xffffff, 0.8);
+  light.position.set(10, 10, 10);
+  scene.add(light);
+
+  // Ground
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(50, 50),
+    new THREE.MeshStandardMaterial({ color: 0x444444 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  const blocks = [];
+
+  function addBlock(pos = { x: 0, y: 0.5, z: 0 }) {
+    const block = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff })
+    );
+    block.position.set(pos.x, pos.y, pos.z);
+    scene.add(block);
+    blocks.push(block);
+    saveLocal();
+  }
+
+  function clearScene() {
+    blocks.forEach(b => scene.remove(b));
+    blocks.length = 0;
+    localStorage.removeItem("anestradeScene");
+    location.hash = "";
+  }
+
+  // Save to localStorage
+  function saveLocal() {
+    const data = blocks.map(b => ({
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      c: b.material.color.getHex()
+    }));
+    localStorage.setItem("anestradeScene", JSON.stringify(data));
+  }
+
+  // Save to URL
+  function saveToURL() {
+    const data = blocks.map(b => ({
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      c: b.material.color.getHex()
+    }));
+    location.hash = btoa(JSON.stringify(data));
+  }
+
+  // Load from URL or localStorage
+  function loadScene() {
+    let data = null;
+
+    if (location.hash.length > 1) {
+      try {
+        data = JSON.parse(atob(location.hash.substring(1)));
+      } catch {}
+    } else {
+      const local = localStorage.getItem("anestradeScene");
+      if (local) data = JSON.parse(local);
+    }
+
+    if (data) {
+      data.forEach(d => {
+        const block = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 1, 1),
+          new THREE.MeshStandardMaterial({ color: d.c })
+        );
+        block.position.set(d.x, d.y, d.z);
+        scene.add(block);
+        blocks.push(block);
+      });
+    }
+  }
+
+  loadScene();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+
+</body>
+</html>
