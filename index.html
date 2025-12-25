@@ -1,161 +1,254 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>ANESTRADE Studio</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: white;
-    }
-    #ui {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    button {
-      margin: 4px 0;
-      width: 140px;
-      padding: 6px;
-      cursor: pointer;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>ANESTRADE Studio</title>
+
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  background: #1e1e1e;
+  color: white;
+}
+
+#topbar {
+  height: 30px;
+  background: #2a2a2a;
+  padding: 5px;
+}
+
+#container {
+  display: flex;
+  height: calc(100vh - 30px);
+}
+
+#explorer {
+  width: 200px;
+  background: #252526;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+#viewport {
+  flex: 1;
+}
+
+#scriptEditor {
+  width: 300px;
+  background: #1b1b1b;
+  padding: 6px;
+}
+
+textarea {
+  width: 100%;
+  height: 90%;
+  background: #111;
+  color: #0f0;
+  border: none;
+  resize: none;
+  font-family: monospace;
+}
+
+button {
+  width: 100%;
+  margin-top: 4px;
+}
+</style>
 </head>
+
 <body>
 
-<div id="ui">
-  <strong>ANESTRADE Studio</strong><br>
-  <button onclick="addBlock()">Add Block</button>
-  <button onclick="saveToURL()">Save to URL</button>
-  <button onclick="clearScene()">Clear Scene</button>
+<div id="topbar">
+  <strong>ANESTRADE Studio</strong>
 </div>
 
+<div id="container">
+
+  <div id="explorer">
+    <strong>Explorer</strong>
+    <button onclick="addBlock()">+ Block</button>
+    <ul id="explorerList"></ul>
+  </div>
+
+  <div id="viewport"></div>
+
+  <div id="scriptEditor">
+    <strong>Lua Script</strong>
+    <textarea id="luaCode">-- Example script
+print("Hello from ANESTRADE Lua")
+
+if object then
+  object.y = object.y + 1
+end
+</textarea>
+    <button onclick="runLua()">Run Script</button>
+  </div>
+
+</div>
+
+<!-- Three.js -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
 
+<!-- Lua VM -->
+<script src="https://unpkg.com/fengari-web/dist/fengari-web.js"></script>
+
 <script>
-  // Scene setup
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x222222);
+/* =======================
+   3D ENGINE
+======================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x202020);
 
-  const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
+const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+camera.position.set(5,5,5);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth - 500, window.innerHeight - 30);
+document.getElementById("viewport").appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const light = new THREE.DirectionalLight(0xffffff, 0.8);
+light.position.set(10,10,10);
+scene.add(light);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(50,50),
+  new THREE.MeshStandardMaterial({ color: 0x444444 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+/* =======================
+   GAME OBJECT SYSTEM
+======================= */
+const objects = [];
+let selected = null;
+
+function addBlock() {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({ color: Math.random()*0xffffff })
   );
-  camera.position.set(5, 5, 5);
+  mesh.position.y = 0.5;
+  scene.add(mesh);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+  const obj = {
+    name: "Block" + objects.length,
+    mesh: mesh,
+    script: ""
+  };
 
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
+  objects.push(obj);
+  refreshExplorer();
+}
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const light = new THREE.DirectionalLight(0xffffff, 0.8);
-  light.position.set(10, 10, 10);
-  scene.add(light);
-
-  // Ground
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(50, 50),
-    new THREE.MeshStandardMaterial({ color: 0x444444 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  scene.add(ground);
-
-  const blocks = [];
-
-  function addBlock(pos = { x: 0, y: 0.5, z: 0 }) {
-    const block = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff })
-    );
-    block.position.set(pos.x, pos.y, pos.z);
-    scene.add(block);
-    blocks.push(block);
-    saveLocal();
-  }
-
-  function clearScene() {
-    blocks.forEach(b => scene.remove(b));
-    blocks.length = 0;
-    localStorage.removeItem("anestradeScene");
-    location.hash = "";
-  }
-
-  // Save to localStorage
-  function saveLocal() {
-    const data = blocks.map(b => ({
-      x: b.position.x,
-      y: b.position.y,
-      z: b.position.z,
-      c: b.material.color.getHex()
-    }));
-    localStorage.setItem("anestradeScene", JSON.stringify(data));
-  }
-
-  // Save to URL
-  function saveToURL() {
-    const data = blocks.map(b => ({
-      x: b.position.x,
-      y: b.position.y,
-      z: b.position.z,
-      c: b.material.color.getHex()
-    }));
-    location.hash = btoa(JSON.stringify(data));
-  }
-
-  // Load from URL or localStorage
-  function loadScene() {
-    let data = null;
-
-    if (location.hash.length > 1) {
-      try {
-        data = JSON.parse(atob(location.hash.substring(1)));
-      } catch {}
-    } else {
-      const local = localStorage.getItem("anestradeScene");
-      if (local) data = JSON.parse(local);
-    }
-
-    if (data) {
-      data.forEach(d => {
-        const block = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 1, 1),
-          new THREE.MeshStandardMaterial({ color: d.c })
-        );
-        block.position.set(d.x, d.y, d.z);
-        scene.add(block);
-        blocks.push(block);
-      });
-    }
-  }
-
-  loadScene();
-
-  function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  }
-  animate();
-
-  window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+function refreshExplorer() {
+  const list = document.getElementById("explorerList");
+  list.innerHTML = "";
+  objects.forEach((obj, i) => {
+    const li = document.createElement("li");
+    li.textContent = obj.name;
+    li.onclick = () => selectObject(i);
+    list.appendChild(li);
   });
-</script>
+}
 
+function selectObject(index) {
+  selected = objects[index];
+  document.getElementById("luaCode").value =
+    selected.script || "-- Script for " + selected.name;
+}
+
+/* =======================
+   LUA SCRIPTING
+======================= */
+function runLua() {
+  if (!selected) return alert("Select an object first");
+
+  selected.script = document.getElementById("luaCode").value;
+
+  const lua = fengari.load(`
+    object = {
+      x = ${selected.mesh.position.x},
+      y = ${selected.mesh.position.y},
+      z = ${selected.mesh.position.z}
+    }
+
+    ${selected.script}
+
+    return object.x, object.y, object.z
+  `);
+
+  try {
+    const result = lua();
+    selected.mesh.position.set(result[0], result[1], result[2]);
+  } catch (e) {
+    alert("Lua Error: " + e);
+  }
+}
+
+/* =======================
+   SAVE / LOAD
+======================= */
+function saveProject() {
+  const data = objects.map(o => ({
+    name: o.name,
+    pos: o.mesh.position,
+    color: o.mesh.material.color.getHex(),
+    script: o.script
+  }));
+  location.hash = btoa(JSON.stringify(data));
+  localStorage.setItem("anestrade", JSON.stringify(data));
+}
+
+function loadProject() {
+  let data = null;
+  if (location.hash.length > 1) {
+    data = JSON.parse(atob(location.hash.slice(1)));
+  } else if (localStorage.getItem("anestrade")) {
+    data = JSON.parse(localStorage.getItem("anestrade"));
+  }
+
+  if (!data) return;
+
+  data.forEach(d => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshStandardMaterial({ color: d.color })
+    );
+    mesh.position.set(d.pos.x, d.pos.y, d.pos.z);
+    scene.add(mesh);
+
+    objects.push({
+      name: d.name,
+      mesh,
+      script: d.script
+    });
+  });
+
+  refreshExplorer();
+}
+
+loadProject();
+
+/* =======================
+   LOOP
+======================= */
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+setInterval(saveProject, 3000);
+
+</script>
 </body>
 </html>
